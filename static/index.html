@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper 语音转写工具</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .upload-section, .record-section {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #eee;
+            border-radius: 8px;
+        }
+        h2 {
+            color: #444;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #file-input {
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+            width: 100%;
+        }
+        #result-area {
+            margin-top: 2rem;
+            padding: 1rem;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            min-height: 150px;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+            font-size: 1rem;
+        }
+        #progress-area {
+            margin: 1rem 0;
+            height: 8px;
+            background-color: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+        .status {
+            color: #666;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+        .record-status {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Whisper 语音实时转写</h1>
+
+        <div class="upload-section">
+            <h2>1. 上传音频文件</h2>
+            <input type="file" id="file-input" accept="audio/*">
+            <button id="upload-btn">开始转写</button>
+            <button id="stop-btn" disabled>停止转写</button>
+        </div>
+
+        <div class="record-section">
+            <h2>2. 网页录音</h2>
+            <button id="record-btn">开始录音</button>
+            <button id="stop-record-btn" disabled>停止录音并转写</button>
+            <div class="record-status" id="record-status"></div>
+        </div>
+
+        <div class="status" id="process-status">就绪</div>
+        <div id="progress-area">
+            <div id="progress-bar"></div>
+        </div>
+
+        <h2>转写结果</h2>
+        <div id="result-area">等待转写...</div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let sseConnection;
+        let accumulatedText = '';
+
+        const fileInput = document.getElementById('file-input');
+        const uploadBtn = document.getElementById('upload-btn');
+        const recordBtn = document.getElementById('record-btn');
+        const stopRecordBtn = document.getElementById('stop-record-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const resultArea = document.getElementById('result-area');
+        const progressBar = document.getElementById('progress-bar');
+        const processStatus = document.getElementById('process-status');
+        const recordStatus = document.getElementById('record-status');
+
+        function resetUI() {
+            progressBar.style.width = '0%';
+            resultArea.textContent = '处理中...';
+            processStatus.textContent = '初始化...';
+            accumulatedText = '';
+            if (sseConnection) {
+                sseConnection.close();
+            }
+            uploadBtn.disabled = false;
+            stopBtn.disabled = true;
+            recordBtn.disabled = false;
+            stopRecordBtn.disabled = true;
+        }
+
+        function connectSSE(taskId) {
+            sseConnection = new EventSource(`/sse?task_id=${taskId}`);
+
+            sseConnection.addEventListener('connect', (event) => {
+                console.log('SSE连接已建立');
+                processStatus.textContent = '已连接...';
+            });
+
+            sseConnection.addEventListener('loading', (event) => {
+                const progress = JSON.parse(event.data);
+                progressBar.style.width = `${progress}%`;
+                processStatus.textContent = '加载音频并预处理中...';
+            });
+
+            sseConnection.addEventListener('lang', (event) => {
+                const [progress, lang] = JSON.parse(event.data);
+                progressBar.style.width = `${progress}%`;
+                const langNames = {
+                    'zh': '中文', 'en': '英文', 'ja': '日语', 'ko': '韩语',
+                    'fr': '法语', 'de': '德语', 'es': '西班牙语', 'ru': '俄语',
+                    'pt': '葡萄牙语', 'it': '意大利语', 'nl': '荷兰语', 'ar': '阿拉伯语'
+                };
+                processStatus.textContent = `语言检测完成：${langNames[lang] || lang}`;
+            });
+
+            sseConnection.addEventListener('progress', (event) => {
+                const [progress, segment] = JSON.parse(event.data);
+                progressBar.style.width = `${progress}%`;
+                processStatus.textContent = '转写中...';
+                if (segment) {
+                    accumulatedText += segment;
+                    resultArea.textContent = accumulatedText;
+                }
+            });
+
+            sseConnection.addEventListener('complete', (event) => {
+                progressBar.style.width = '100%';
+                processStatus.textContent = '转写完成';
+                sseConnection.close();
+                uploadBtn.disabled = false;
+                stopBtn.disabled = true;
+                recordBtn.disabled = false;
+                stopRecordBtn.disabled = true;
+            });
+
+            sseConnection.addEventListener('stopped', (event) => {
+                processStatus.textContent = '转写已停止';
+                sseConnection.close();
+                uploadBtn.disabled = false;
+                stopBtn.disabled = true;
+                recordBtn.disabled = false;
+                stopRecordBtn.disabled = true;
+            });
+
+            sseConnection.addEventListener('error', (event) => {
+                const errorMsg = JSON.parse(event.data);
+                processStatus.textContent = '转写失败';
+                resultArea.textContent = `错误：${errorMsg}`;
+                console.error('转写错误:', errorMsg);
+                sseConnection.close();
+                uploadBtn.disabled = false;
+                stopBtn.disabled = true;
+                recordBtn.disabled = false;
+                stopRecordBtn.disabled = true;
+            });
+
+            sseConnection.onerror = (event) => {
+                if (event.eventPhase === EventSource.CLOSED) {
+                } else {
+                    processStatus.textContent = '连接出错';
+                    console.error('SSE连接错误:', event);
+                    sseConnection.close();
+                }
+            };
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请先选择音频文件！');
+                return;
+            }
+
+            resetUI();
+            processStatus.textContent = '正在上传并处理音频...';
+            uploadBtn.disabled = true;
+            stopBtn.disabled = false;
+            recordBtn.disabled = true;
+            stopRecordBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '转写失败');
+                }
+
+                const result = await response.json();
+                if (result.task_id) {
+                    connectSSE(result.task_id);
+                } else {
+                    throw new Error('未能获取任务ID');
+                }
+            } catch (error) {
+                processStatus.textContent = '转写失败';
+                resultArea.textContent = `错误：${error.message}`;
+                console.error(error);
+                if (sseConnection) sseConnection.close();
+                uploadBtn.disabled = false;
+                stopBtn.disabled = true;
+                recordBtn.disabled = false;
+            }
+        });
+
+        recordBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.start();
+                recordBtn.disabled = true;
+                stopRecordBtn.disabled = false;
+                uploadBtn.disabled = true;
+                stopBtn.disabled = true;
+                recordStatus.textContent = '正在录音...';
+                resultArea.textContent = '正在录音，请说话...';
+            } catch (error) {
+                alert('无法访问麦克风！请检查权限设置。');
+                console.error(error);
+            }
+        });
+
+        stopBtn.addEventListener('click', async () => {
+            if (sseConnection && sseConnection.readyState === EventSource.OPEN) {
+                const taskId = new URLSearchParams(sseConnection.url.split('?')[1]).get('task_id');
+                if (taskId) {
+                    try {
+                        await fetch(`/stop?task_id=${taskId}`, { method: 'POST' });
+                    } catch (error) {
+                        console.error('停止转写失败:', error);
+                        sseConnection.close();
+                        uploadBtn.disabled = false;
+                        stopBtn.disabled = true;
+                        recordBtn.disabled = false;
+                    }
+                }
+            }
+        });
+
+        stopRecordBtn.addEventListener('click', async () => {
+            if (!mediaRecorder) return;
+
+            mediaRecorder.stop();
+            recordBtn.disabled = false;
+            stopRecordBtn.disabled = true;
+            recordStatus.textContent = '';
+
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const audioFile = new File([audioBlob], 'recorded_audio.wav', { type: 'audio/wav' });
+
+            resetUI();
+            processStatus.textContent = '正在处理录音...';
+
+            const formData = new FormData();
+            formData.append('file', audioFile);
+
+            try {
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '转写失败');
+                }
+
+                const result = await response.json();
+                if (result.task_id) {
+                    connectSSE(result.task_id);
+                } else {
+                    throw new Error('未能获取任务ID');
+                }
+            } catch (error) {
+                processStatus.textContent = '转写失败';
+                resultArea.textContent = `错误：${error.message}`;
+                console.error(error);
+                if (sseConnection) sseConnection.close();
+                uploadBtn.disabled = false;
+                stopBtn.disabled = true;
+                recordBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

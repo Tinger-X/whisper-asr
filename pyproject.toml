@@ -9,7 +9,7 @@ dependencies = [
     "openai-whisper>=20250625",
     "python-multipart>=0.0.21",
     "setuptools<80",
-    "torch>=2.9.1",
+    "torch==2.9.1",
     "uvicorn>=0.40.0",
     "zhconv>=1.4.3",
 ]
@@ -17,3 +17,11 @@ dependencies = [
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

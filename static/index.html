@@ -466,12 +466,26 @@
         }
 
         async function processRecording(audioChunks) {
+            if (!audioChunks || audioChunks.length === 0) {
+                throw new Error("没有录音数据，请先开始录音");
+            }
+
             const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
             const arrayBuffer = await audioBlob.arrayBuffer();
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            const wavBlob = bufferToWav(audioBuffer);
-            return new File([wavBlob], "recorded_audio.wav", { type: "audio/wav" });
+
+            if (arrayBuffer.byteLength === 0) {
+                throw new Error("录音数据为空，请重新录音");
+            }
+
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+                const wavBlob = bufferToWav(audioBuffer);
+                return new File([wavBlob], "recorded_audio.wav", { type: "audio/wav" });
+            } catch (decodeError) {
+                console.error("音频解码失败:", decodeError);
+                throw new Error("音频解码失败，可能是录音数据损坏或格式不支持");
+            }
         }
 
         stopRecordBtn.addEventListener("click", async () => {
@@ -488,6 +502,10 @@
             processStatus.textContent = "正在处理录音...";
 
             try {
+                if (!audioChunks || audioChunks.length === 0) {
+                    throw new Error("没有录音数据，请先开始录音后再停止");
+                }
+
                 const audioFile = await processRecording(audioChunks);
                 const formData = new FormData();
                 formData.append("file", audioFile);
@@ -509,8 +527,12 @@
                     throw new Error("未能获取任务ID");
                 }
             } catch (error) {
-                processStatus.textContent = "转写失败";
-                resultArea.textContent = `错误：${error.message}`;
+                processStatus.textContent = "录音处理失败";
+                if (error.message.includes("解码") || error.message.includes("数据为空") || error.message.includes("录音数据")) {
+                    resultArea.textContent = `录音失败：${error.message}，请重新尝试录音`;
+                } else {
+                    resultArea.textContent = `错误：${error.message}`;
+                }
                 console.error(error);
                 if (sseConnection) sseConnection.close();
                 uploadBtn.disabled = false;

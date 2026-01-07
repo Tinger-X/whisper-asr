@@ -1,9 +1,0 @@
-.git
-.gitignore
-__pycache__
-.venv
-*.mp3
-.dockerignore
-Dockerfile
-docker-compose.yml
-README.md

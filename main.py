@@ -19,13 +19,17 @@ from fastapi.responses import StreamingResponse, JSONResponse, Response
 app = FastAPI(
     title="Whisper语音识别SSE服务",
     description="支持文件上传/录音、SSE实时返回转写结果和进度",
-    version="1.0.0"
+    version="1.0.0",
 )
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = whisper.load_model("base", download_root="./static", device=device, in_memory=True)
+model = whisper.load_model(
+    "base", download_root="./static", device=device, in_memory=True
+)
 task_states: dict[str, dict] = {}
 active_threads: dict[str, threading.Thread] = {}
-SSE_SEGMENT_FRAMES = 1500  # 15秒 = 1500帧 (Whisper使用100帧/秒)，SSE模式使用更小的片段以获得更流畅的进度反馈
+SSE_SEGMENT_FRAMES = min(
+    3000, N_FRAMES
+)  # Whisper使用100帧/秒，SSE模式使用更小的片段以获得更流畅的进度反馈
 
 
 async def sse_generator(task_id: str) -> AsyncGenerator[str, None]:
@@ -142,7 +146,9 @@ def asr_task(audio_path: str, task_id: str):
 
             segment_end = min(seek + SSE_SEGMENT_FRAMES, total_frames)
             mel_segment = mel[:, seek:segment_end]
-            mel_segment = pad_or_trim(mel_segment, N_FRAMES).to(model.device).to(torch.float32)
+            mel_segment = (
+                pad_or_trim(mel_segment, N_FRAMES).to(model.device).to(torch.float32)
+            )
 
             options = DecodingOptions(
                 language=language,  # noqa
@@ -170,8 +176,9 @@ def asr_task(audio_path: str, task_id: str):
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
-        task_state["error"] = 'str(e)174'
+        task_state["error"] = "str(e)174"
         task_state["complete"] = True
 
 
@@ -187,7 +194,7 @@ async def sse(task_id: str = Query(..., description="任务ID")):
     if task_id not in task_states:
         return StreamingResponse(
             (f"event: asr-err\ndata: {json.dumps('无效的任务ID或任务已过期')}\n\n",),
-            media_type="text/event-stream"
+            media_type="text/event-stream",
         )
     return StreamingResponse(sse_generator(task_id), media_type="text/event-stream")
 
@@ -202,16 +209,29 @@ async def transcribe(file: UploadFile = File(..., description="音频文件")):
         "message": "",
         "text": "",
         "complete": False,
-        "error": ""
+        "error": "",
     }
 
     # 校验文件类型
-    allowed_extensions = [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".mp4", ".webm"]
+    allowed_extensions = [
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".flac",
+        ".ogg",
+        ".mp4",
+        ".webm",
+        ".aac",
+    ]
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_extensions:
-        task_states[task_id]["error"] = f"不支持的文件格式！仅支持：{allowed_extensions}"
+        task_states[task_id][
+            "error"
+        ] = f"不支持的文件格式！仅支持：{allowed_extensions}"
         task_states[task_id]["complete"] = True
-        raise HTTPException(status_code=400, detail=f"不支持的文件格式！仅支持：{allowed_extensions}")
+        raise HTTPException(
+            status_code=400, detail=f"不支持的文件格式！仅支持：{allowed_extensions}"
+        )
 
     try:
         # 保存临时文件
@@ -222,10 +242,16 @@ async def transcribe(file: UploadFile = File(..., description="音频文件")):
         # 后台执行转写，使用更小的片段长度以获得更流畅的SSE进度反馈
         asyncio.create_task(asyncio.to_thread(asr_task, temp_file_path, task_id))
 
-        return JSONResponse(content={"status": "processing", "task_id": task_id, "message": "转写任务已启动"})
+        return JSONResponse(
+            content={
+                "status": "processing",
+                "task_id": task_id,
+                "message": "转写任务已启动",
+            }
+        )
 
     except Exception as e:
-        task_states[task_id]["error"] = 'str(e)228'
+        task_states[task_id]["error"] = "str(e)228"
         task_states[task_id]["complete"] = True
         raise HTTPException(status_code=500, detail=f"转写失败：{str(e)}")
 
@@ -246,7 +272,7 @@ async def stop(task_id: str = Query(..., description="任务ID")):
     if task_id not in task_states:
         return JSONResponse(
             status_code=404,
-            content={"status": "error", "message": "任务不存在或已结束"}
+            content={"status": "error", "message": "任务不存在或已结束"},
         )
 
     task_states[task_id]["stopped"] = True
@@ -266,7 +292,9 @@ async def api(file: UploadFile = File(..., description="音频文件")):
     allowed_extensions = [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".mp4", ".webm"]
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail=f"不支持的文件格式！仅支持：{allowed_extensions}")
+        raise HTTPException(
+            status_code=400, detail=f"不支持的文件格式！仅支持：{allowed_extensions}"
+        )
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
@@ -294,7 +322,7 @@ async def api(file: UploadFile = File(..., description="音频文件")):
 
         while seek < total_frames:
             segment_size = min(N_FRAMES, total_frames - seek)
-            mel_segment = mel[:, seek: seek + segment_size]
+            mel_segment = mel[:, seek : seek + segment_size]
             mel_segment = pad_or_trim(mel_segment, N_FRAMES).to(model.device)
 
             options = DecodingOptions(
@@ -317,17 +345,28 @@ async def api(file: UploadFile = File(..., description="音频文件")):
             seek += segment_size
 
         lang_names = {
-            "zh": "中文", "en": "英文", "ja": "日语", "ko": "韩语",
-            "fr": "法语", "de": "德语", "es": "西班牙语", "ru": "俄语",
-            "pt": "葡萄牙语", "it": "意大利语", "nl": "荷兰语", "ar": "阿拉伯语"
+            "zh": "中文",
+            "en": "英文",
+            "ja": "日语",
+            "ko": "韩语",
+            "fr": "法语",
+            "de": "德语",
+            "es": "西班牙语",
+            "ru": "俄语",
+            "pt": "葡萄牙语",
+            "it": "意大利语",
+            "nl": "荷兰语",
+            "ar": "阿拉伯语",
         }
 
-        return JSONResponse(content={
-            "status": "success",
-            "text": accumulated_text,
-            "language": detected_language,
-            "language_name": lang_names.get(detected_language, detected_language)
-        })
+        return JSONResponse(
+            content={
+                "status": "success",
+                "text": accumulated_text,
+                "language": detected_language,
+                "language_name": lang_names.get(detected_language, detected_language),
+            }
+        )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"转写失败：{str(e)}")

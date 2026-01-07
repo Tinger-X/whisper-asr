@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,34 +12,41 @@
             padding: 0;
             font-family: Arial, sans-serif;
         }
+
         body {
             max-width: 800px;
             margin: 2rem auto;
             padding: 0 1rem;
             background-color: #f5f5f5;
         }
+
         .container {
             background: white;
             padding: 2rem;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
+
         h1 {
             color: #333;
             margin-bottom: 2rem;
             text-align: center;
         }
-        .upload-section, .record-section {
+
+        .upload-section,
+        .record-section {
             margin-bottom: 2rem;
             padding: 1rem;
             border: 1px solid #eee;
             border-radius: 8px;
         }
+
         h2 {
             color: #444;
             margin-bottom: 1rem;
             font-size: 1.2rem;
         }
+
         button {
             background-color: #007bff;
             color: white;
@@ -49,18 +57,22 @@
             font-size: 1rem;
             margin: 0.5rem 0.5rem 0.5rem 0;
         }
+
         button:hover {
             background-color: #0056b3;
         }
+
         button:disabled {
             background-color: #6c757d;
             cursor: not-allowed;
         }
+
         #file-input {
             margin: 0.5rem 0;
             padding: 0.5rem;
             width: 100%;
         }
+
         #result-area {
             margin-top: 2rem;
             padding: 1rem;
@@ -70,7 +82,9 @@
             background-color: #f9f9f9;
             white-space: pre-wrap;
             font-size: 1rem;
+            user-select: all;
         }
+
         #progress-area {
             margin: 1rem 0;
             height: 8px;
@@ -78,23 +92,27 @@
             border-radius: 4px;
             overflow: hidden;
         }
+
         #progress-bar {
             height: 100%;
             width: 0%;
             background-color: #28a745;
             transition: width 0.3s ease;
         }
+
         .status {
             color: #666;
             margin: 0.5rem 0;
             font-size: 0.9rem;
         }
+
         .record-status {
             color: #dc3545;
             font-weight: bold;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>Whisper 语音实时转写</h1>
@@ -123,6 +141,7 @@
     </div>
 
     <script>
+        const Duration = 1000;
         let mediaRecorder;
         let audioChunks = [];
         let sseConnection;
@@ -205,8 +224,7 @@
 
         function animateStep(timestamp) {
             const elapsed = timestamp - animationStartTime;
-            const duration = 800;
-            const progress = Math.min(elapsed / duration, 1);
+            const progress = Math.min(elapsed / Duration, 1);
 
             const easedProgress = easeOutCubic(progress);
             currentProgress = animationStartProgress + (targetProgress - animationStartProgress) * easedProgress;
@@ -277,7 +295,7 @@
                     stopBtn.disabled = true;
                     recordBtn.disabled = false;
                     stopRecordBtn.disabled = true;
-                }, 800);
+                }, Duration);
             });
 
             sseConnection.addEventListener("stopped", (event) => {
@@ -443,4 +461,5 @@
         });
     </script>
 </body>
+
 </html>

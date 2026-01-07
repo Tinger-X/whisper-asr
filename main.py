@@ -15,12 +15,15 @@ from whisper.decoding import DecodingOptions
 from whisper.audio import N_FRAMES, pad_or_trim
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.responses import StreamingResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(
     title="Whisper语音识别SSE服务",
     description="支持文件上传/录音、SSE实时返回转写结果和进度",
     version="1.0.0",
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = whisper.load_model(
     "base", download_root="./static", device=device, in_memory=True

@@ -175,10 +175,7 @@ def asr_task(audio_path: str, task_id: str):
         task_state["complete"] = True
 
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        task_state["error"] = "str(e)174"
+        task_state["error"] = str(e)
         task_state["complete"] = True
 
 
@@ -251,7 +248,7 @@ async def transcribe(file: UploadFile = File(..., description="音频文件")):
         )
 
     except Exception as e:
-        task_states[task_id]["error"] = "str(e)228"
+        task_states[task_id]["error"] = str(e)
         task_states[task_id]["complete"] = True
         raise HTTPException(status_code=500, detail=f"转写失败：{str(e)}")
 

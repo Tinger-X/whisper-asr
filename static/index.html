@@ -413,6 +413,67 @@
             }
         });
 
+        function bufferToWav(audioBuffer) {
+            const numOfChan = audioBuffer.numberOfChannels;
+            const length = audioBuffer.length * numOfChan * 2 + 44;
+            const buffer = new ArrayBuffer(length);
+            const view = new DataView(buffer);
+            const channels = [];
+            let offset = 0;
+            let pos = 0;
+
+            setUint32(0x46464952);
+            setUint32(length - 8);
+            setUint32(0x45564157);
+
+            setUint32(0x20746d66);
+            setUint32(16);
+            setUint16(1);
+            setUint16(numOfChan);
+            setUint32(audioBuffer.sampleRate);
+            setUint32(audioBuffer.sampleRate * 2 * numOfChan);
+            setUint16(numOfChan * 2);
+            setUint16(16);
+
+            setUint32(0x61746164);
+            setUint32(length - pos - 4);
+
+            for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+                channels.push(audioBuffer.getChannelData(i));
+            }
+
+            while (pos < length) {
+                for (let i = 0; i < numOfChan; i++) {
+                    let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                    sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                    view.setInt16(pos, sample, true);
+                    pos += 2;
+                }
+                offset++;
+            }
+
+            return new Blob([buffer], { type: "audio/wav" });
+
+            function setUint16(data) {
+                view.setUint16(pos, data, true);
+                pos += 2;
+            }
+
+            function setUint32(data) {
+                view.setUint32(pos, data, true);
+                pos += 4;
+            }
+        }
+
+        async function processRecording(audioChunks) {
+            const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            const wavBlob = bufferToWav(audioBuffer);
+            return new File([wavBlob], "recorded_audio.wav", { type: "audio/wav" });
+        }
+
         stopRecordBtn.addEventListener("click", async () => {
             if (!mediaRecorder) return;
 
@@ -423,16 +484,14 @@
 
             mediaRecorder.stream.getTracks().forEach(track => track.stop());
 
-            const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
-            const audioFile = new File([audioBlob], "recorded_audio.wav", { type: "audio/wav" });
-
             resetUI();
             processStatus.textContent = "正在处理录音...";
 
-            const formData = new FormData();
-            formData.append("file", audioFile);
-
             try {
+                const audioFile = await processRecording(audioChunks);
+                const formData = new FormData();
+                formData.append("file", audioFile);
+
                 const response = await fetch("/transcribe", {
                     method: "POST",
                     body: formData

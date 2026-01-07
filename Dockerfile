@@ -11,8 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
 COPY pyproject.toml .
 RUN pip install --no-cache-dir --prefix=/install -e . --index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://download.pytorch.org/whl/cpu
 

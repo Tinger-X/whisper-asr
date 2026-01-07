@@ -126,23 +126,47 @@
         let mediaRecorder;
         let audioChunks = [];
         let sseConnection;
-        let accumulatedText = '';
+        let accumulatedText = "";
 
-        const fileInput = document.getElementById('file-input');
-        const uploadBtn = document.getElementById('upload-btn');
-        const recordBtn = document.getElementById('record-btn');
-        const stopRecordBtn = document.getElementById('stop-record-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        const resultArea = document.getElementById('result-area');
-        const progressBar = document.getElementById('progress-bar');
-        const processStatus = document.getElementById('process-status');
-        const recordStatus = document.getElementById('record-status');
+        let targetProgress = 0;
+        let currentProgress = 0;
+        let typewriterTimeout = null;
+        let displayedTextLength = 0;
+        let animationStartTime = null;
+        let animationStartProgress = 0;
+        let animationStartTextLength = 0;
+        let targetTextLength = 0;
+        let animationQueue = [];
+        let isAnimating = false;
+
+        const fileInput = document.getElementById("file-input");
+        const uploadBtn = document.getElementById("upload-btn");
+        const recordBtn = document.getElementById("record-btn");
+        const stopRecordBtn = document.getElementById("stop-record-btn");
+        const stopBtn = document.getElementById("stop-btn");
+        const resultArea = document.getElementById("result-area");
+        const progressBar = document.getElementById("progress-bar");
+        const processStatus = document.getElementById("process-status");
+        const recordStatus = document.getElementById("record-status");
 
         function resetUI() {
-            progressBar.style.width = '0%';
-            resultArea.textContent = '处理中...';
-            processStatus.textContent = '初始化...';
-            accumulatedText = '';
+            progressBar.style.width = "0%";
+            resultArea.textContent = "处理中...";
+            processStatus.textContent = "就绪";
+            accumulatedText = "";
+            targetProgress = 0;
+            currentProgress = 0;
+            displayedTextLength = 0;
+            animationStartTime = null;
+            animationStartProgress = 0;
+            animationStartTextLength = 0;
+            targetTextLength = 0;
+            animationQueue = [];
+            isAnimating = false;
+            if (typewriterTimeout) {
+                clearTimeout(typewriterTimeout);
+                typewriterTimeout = null;
+            }
             if (sseConnection) {
                 sseConnection.close();
             }
@@ -152,44 +176,112 @@
             stopRecordBtn.disabled = true;
         }
 
+        function queueAnimation(targetProgressValue, targetText) {
+            animationQueue.push({
+                progress: targetProgressValue,
+                text: targetText
+            });
+            if (!isAnimating) {
+                runNextAnimation();
+            }
+        }
+
+        function runNextAnimation() {
+            if (animationQueue.length === 0) {
+                isAnimating = false;
+                return;
+            }
+
+            isAnimating = true;
+            const animation = animationQueue.shift();
+            animationStartTime = performance.now();
+            animationStartProgress = currentProgress;
+            animationStartTextLength = displayedTextLength;
+            targetProgress = animation.progress;
+            targetTextLength = animation.text.length;
+
+            requestAnimationFrame(animateStep);
+        }
+
+        function animateStep(timestamp) {
+            const elapsed = timestamp - animationStartTime;
+            const duration = 800;
+            const progress = Math.min(elapsed / duration, 1);
+
+            const easedProgress = easeOutCubic(progress);
+            currentProgress = animationStartProgress + (targetProgress - animationStartProgress) * easedProgress;
+            progressBar.style.width = `${currentProgress}%`;
+
+            const textProgress = Math.floor(animationStartTextLength + (targetTextLength - animationStartTextLength) * easedProgress);
+            if (textProgress > displayedTextLength && textProgress <= targetTextLength) {
+                const newText = accumulatedText.substring(0, textProgress);
+                resultArea.textContent = newText;
+                displayedTextLength = textProgress;
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animateStep);
+            } else {
+                currentProgress = targetProgress;
+                progressBar.style.width = `${targetProgress}%`;
+                displayedTextLength = targetTextLength;
+                resultArea.textContent = accumulatedText.substring(0, targetTextLength);
+                runNextAnimation();
+            }
+        }
+
+        function easeOutCubic(t) {
+            return 1 - Math.pow(1 - t, 3);
+        }
+
         function connectSSE(taskId) {
             sseConnection = new EventSource(`/sse?task_id=${taskId}`);
 
-            sseConnection.addEventListener('connect', (event) => {
-                console.log('SSE连接已建立');
-                processStatus.textContent = '已连接...';
+            sseConnection.addEventListener("connect", (event) => {
+                console.log("SSE连接已建立");
+                processStatus.textContent = "已连接...";
             });
 
-            sseConnection.addEventListener('loading', (event) => {
+            sseConnection.addEventListener("loading", (event) => {
                 const progress = JSON.parse(event.data);
-                progressBar.style.width = `${progress}%`;
-                processStatus.textContent = '加载音频并预处理中...';
+                queueAnimation(progress, accumulatedText);
+                processStatus.textContent = "加载音频并预处理中...";
             });
 
-            sseConnection.addEventListener('lang', (event) => {
+            sseConnection.addEventListener("lang", (event) => {
                 const [progress, lang] = JSON.parse(event.data);
-                progressBar.style.width = `${progress}%`;
+                queueAnimation(progress, accumulatedText);
                 const langNames = {
-                    'zh': '中文', 'en': '英文', 'ja': '日语', 'ko': '韩语',
-                    'fr': '法语', 'de': '德语', 'es': '西班牙语', 'ru': '俄语',
-                    'pt': '葡萄牙语', 'it': '意大利语', 'nl': '荷兰语', 'ar': '阿拉伯语'
+                    "zh": "中文", "en": "英文", "ja": "日语", "ko": "韩语",
+                    "fr": "法语", "de": "德语", "es": "西班牙语", "ru": "俄语",
+                    "pt": "葡萄牙语", "it": "意大利语", "nl": "荷兰语", "ar": "阿拉伯语"
                 };
                 processStatus.textContent = `语言检测完成：${langNames[lang] || lang}`;
             });
 
-            sseConnection.addEventListener('progress', (event) => {
+            sseConnection.addEventListener("progress", (event) => {
                 const [progress, segment] = JSON.parse(event.data);
-                progressBar.style.width = `${progress}%`;
-                processStatus.textContent = '转写中...';
+                processStatus.textContent = "转写中...";
                 if (segment) {
                     accumulatedText += segment;
-                    resultArea.textContent = accumulatedText;
+                    queueAnimation(progress, accumulatedText);
                 }
             });
 
-            sseConnection.addEventListener('complete', (event) => {
-                progressBar.style.width = '100%';
-                processStatus.textContent = '转写完成';
+            sseConnection.addEventListener("complete", (event) => {
+                queueAnimation(100, accumulatedText);
+                processStatus.textContent = "转写完成";
+                setTimeout(() => {
+                    sseConnection.close();
+                    uploadBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    recordBtn.disabled = false;
+                    stopRecordBtn.disabled = true;
+                }, 800);
+            });
+
+            sseConnection.addEventListener("stopped", (event) => {
+                processStatus.textContent = "转写已停止";
                 sseConnection.close();
                 uploadBtn.disabled = false;
                 stopBtn.disabled = true;
@@ -197,20 +289,10 @@
                 stopRecordBtn.disabled = true;
             });
 
-            sseConnection.addEventListener('stopped', (event) => {
-                processStatus.textContent = '转写已停止';
-                sseConnection.close();
-                uploadBtn.disabled = false;
-                stopBtn.disabled = true;
-                recordBtn.disabled = false;
-                stopRecordBtn.disabled = true;
-            });
-
-            sseConnection.addEventListener('error', (event) => {
+            sseConnection.addEventListener("asr-err", (event) => {
                 const errorMsg = JSON.parse(event.data);
-                processStatus.textContent = '转写失败';
+                processStatus.textContent = "转写失败";
                 resultArea.textContent = `错误：${errorMsg}`;
-                console.error('转写错误:', errorMsg);
                 sseConnection.close();
                 uploadBtn.disabled = false;
                 stopBtn.disabled = true;
@@ -221,49 +303,49 @@
             sseConnection.onerror = (event) => {
                 if (event.eventPhase === EventSource.CLOSED) {
                 } else {
-                    processStatus.textContent = '连接出错';
-                    console.error('SSE连接错误:', event);
+                    processStatus.textContent = "连接出错";
+                    console.error("SSE连接错误:", event);
                     sseConnection.close();
                 }
             };
         }
 
-        uploadBtn.addEventListener('click', async () => {
+        uploadBtn.addEventListener("click", async () => {
             const file = fileInput.files[0];
             if (!file) {
-                alert('请先选择音频文件！');
+                alert("请先选择音频文件！");
                 return;
             }
 
             resetUI();
-            processStatus.textContent = '正在上传并处理音频...';
+            processStatus.textContent = "正在上传并处理音频...";
             uploadBtn.disabled = true;
             stopBtn.disabled = false;
             recordBtn.disabled = true;
             stopRecordBtn.disabled = true;
 
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append("file", file);
 
             try {
-                const response = await fetch('/transcribe', {
-                    method: 'POST',
+                const response = await fetch("/transcribe", {
+                    method: "POST",
                     body: formData
                 });
 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.detail || '转写失败');
+                    throw new Error(error.detail || "转写失败");
                 }
 
                 const result = await response.json();
                 if (result.task_id) {
                     connectSSE(result.task_id);
                 } else {
-                    throw new Error('未能获取任务ID');
+                    throw new Error("未能获取任务ID");
                 }
             } catch (error) {
-                processStatus.textContent = '转写失败';
+                processStatus.textContent = "转写失败";
                 resultArea.textContent = `错误：${error.message}`;
                 console.error(error);
                 if (sseConnection) sseConnection.close();
@@ -273,7 +355,7 @@
             }
         });
 
-        recordBtn.addEventListener('click', async () => {
+        recordBtn.addEventListener("click", async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
@@ -288,22 +370,22 @@
                 stopRecordBtn.disabled = false;
                 uploadBtn.disabled = true;
                 stopBtn.disabled = true;
-                recordStatus.textContent = '正在录音...';
-                resultArea.textContent = '正在录音，请说话...';
+                recordStatus.textContent = "正在录音...";
+                resultArea.textContent = "正在录音，请说话...";
             } catch (error) {
-                alert('无法访问麦克风！请检查权限设置。');
+                alert("无法访问麦克风！请检查权限设置。");
                 console.error(error);
             }
         });
 
-        stopBtn.addEventListener('click', async () => {
+        stopBtn.addEventListener("click", async () => {
             if (sseConnection && sseConnection.readyState === EventSource.OPEN) {
-                const taskId = new URLSearchParams(sseConnection.url.split('?')[1]).get('task_id');
+                const taskId = new URLSearchParams(sseConnection.url.split("?")[1]).get("task_id");
                 if (taskId) {
                     try {
-                        await fetch(`/stop?task_id=${taskId}`, { method: 'POST' });
+                        await fetch(`/stop?task_id=${taskId}`, { method: "POST" });
                     } catch (error) {
-                        console.error('停止转写失败:', error);
+                        console.error("停止转写失败:", error);
                         sseConnection.close();
                         uploadBtn.disabled = false;
                         stopBtn.disabled = true;
@@ -313,44 +395,44 @@
             }
         });
 
-        stopRecordBtn.addEventListener('click', async () => {
+        stopRecordBtn.addEventListener("click", async () => {
             if (!mediaRecorder) return;
 
             mediaRecorder.stop();
             recordBtn.disabled = false;
             stopRecordBtn.disabled = true;
-            recordStatus.textContent = '';
+            recordStatus.textContent = "";
 
             mediaRecorder.stream.getTracks().forEach(track => track.stop());
 
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-            const audioFile = new File([audioBlob], 'recorded_audio.wav', { type: 'audio/wav' });
+            const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+            const audioFile = new File([audioBlob], "recorded_audio.wav", { type: "audio/wav" });
 
             resetUI();
-            processStatus.textContent = '正在处理录音...';
+            processStatus.textContent = "正在处理录音...";
 
             const formData = new FormData();
-            formData.append('file', audioFile);
+            formData.append("file", audioFile);
 
             try {
-                const response = await fetch('/transcribe', {
-                    method: 'POST',
+                const response = await fetch("/transcribe", {
+                    method: "POST",
                     body: formData
                 });
 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.detail || '转写失败');
+                    throw new Error(error.detail || "转写失败");
                 }
 
                 const result = await response.json();
                 if (result.task_id) {
                     connectSSE(result.task_id);
                 } else {
-                    throw new Error('未能获取任务ID');
+                    throw new Error("未能获取任务ID");
                 }
             } catch (error) {
-                processStatus.textContent = '转写失败';
+                processStatus.textContent = "转写失败";
                 resultArea.textContent = `错误：${error.message}`;
                 console.error(error);
                 if (sseConnection) sseConnection.close();

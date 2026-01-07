@@ -22,12 +22,10 @@
 
 ### 1. 安装依赖
 
-安装uv，教程略。
-
-同步环境：
-```bash
-uv sync
-```
++ 安装`uv`, `ffmpeg`，教程略。
++ 下载项目源码：`git clone https://github.com/Tinger-X/whisper-asr.git`
+  或者下载项目zip包 [下载连接](https://github.com/Tinger-X/whisper-asr/archive/refs/heads/main.zip) 。
++ 解压后进入项目目录，使用 `uv sync` 同步环境依赖。
 
 ### 2. 启动服务
 
@@ -52,9 +50,11 @@ uv run main.py
 **请求方式**：POST  
 **Content-Type**：multipart/form-data  
 **参数**：
+
 - `file`：音频文件
 
 **响应示例**：
+
 ```json
 {
   "status": "processing",
@@ -69,9 +69,11 @@ uv run main.py
 
 **请求方式**：POST  
 **参数**（Query）：
+
 - `task_id`：任务 ID
 
 **响应示例**：
+
 ```json
 {
   "status": "stopped",
@@ -86,9 +88,11 @@ uv run main.py
 **请求方式**：POST  
 **Content-Type**：multipart/form-data  
 **参数**：
+
 - `file`：音频文件
 
 **响应示例**：
+
 ```json
 {
   "status": "success",
@@ -101,29 +105,29 @@ uv run main.py
 ## 前端界面使用说明
 
 1. **上传音频文件转写**：
-   - 点击"选择文件"按钮选择音频文件
-   - 点击"开始转写"按钮开始转写
-   - 实时查看转写进度和结果
-   - 可以随时点击"停止转写"按钮中断转写
+    - 点击"选择文件"按钮选择音频文件
+    - 点击"开始转写"按钮开始转写
+    - 实时查看转写进度和结果
+    - 可以随时点击"停止转写"按钮中断转写
 
 2. **网页录音转写**：
-   - 点击"开始录音"按钮开始录音
-   - 说话完毕后点击"停止录音并转写"按钮
-   - 系统会自动将录音转换为文字
+    - 点击"开始录音"按钮开始录音
+    - 说话完毕后点击"停止录音并转写"按钮
+    - 系统会自动将录音转换为文字
 
 ## SSE 事件类型
 
 连接 `/sse?task_id=xxx` 会收到以下事件：
 
-| 事件类型 | 说明 |
-|---------|------|
-| `connect` | 连接建立，返回任务 ID |
-| `loading` | 加载音频文件阶段 |
-| `lang` | 语言检测完成 |
-| `progress` | 转写进度更新 |
-| `complete` | 转写完成 |
-| `stopped` | 转写已停止 |
-| `error` | 发生错误 |
+| 事件类型       | 说明           |
+|------------|--------------|
+| `connect`  | 连接建立，返回任务 ID |
+| `loading`  | 加载音频文件阶段     |
+| `lang`     | 语言检测完成       |
+| `progress` | 转写进度更新       |
+| `complete` | 转写完成         |
+| `stopped`  | 转写已停止        |
+| `error`    | 发生错误         |
 
 ## 文件结构
 
